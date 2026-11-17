@@ -23,6 +23,8 @@ Une commande relie un acheteur à un vendeur. Le système confirme le paiement m
 | Signaler un second échec | `IN_DELIVERY` | `RETURN_PENDING` | Livreur assigné. Le client est toujours injoignable. |
 | Confirmer la remise au vendeur | `RETURN_PENDING` | `RETURNED` | Livreur assigné |
 
+L’acheteur peut annuler depuis `PENDING_PAYMENT` ou `PAID`. Dès que le vendeur accepte la commande (`ACCEPTED`), l’annulation par l’acheteur est interdite.
+
 `REFUNDED`, `DELIVERED` et `RETURNED` sont des états finaux. Chaque action vérifie le rôle de l’acteur. Pour une commande existante, l’identité d’un acheteur, d’un vendeur ou d’un livreur doit aussi correspondre à celle enregistrée sur la commande. Une action hors tableau est rejetée sans modification ni ajout à l’historique.
 
 ## Modèle de données
