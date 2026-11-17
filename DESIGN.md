@@ -9,10 +9,9 @@ Une commande relie un acheteur à un vendeur. Le système confirme le paiement m
 | Créer la commande | — | `PENDING_PAYMENT` | Acheteur qui passe la commande |
 | Confirmer le paiement | `PENDING_PAYMENT` | `PAID` | Système, à la réception de la notification de succès |
 | Annuler avant paiement | `PENDING_PAYMENT` | `CANCELLED` | Acheteur de la commande |
-| Traiter un paiement arrivé après l’annulation | `CANCELLED` | `REFUNDED` | Système, à la réception d’une première notification de succès |
 | Annuler après paiement | `PAID` | `REFUNDED` | Acheteur de la commande |
-| Refuser | `PAID` | `REFUNDED` | Vendeur de la commande |
-| Accepter | `PAID` | `ACCEPTED` | Vendeur de la commande |
+| Refuser la commande | `PAID` | `REFUNDED` | Vendeur de la commande |
+| Accepter la commande | `PAID` | `ACCEPTED` | Vendeur de la commande |
 | Déclarer la commande prête | `ACCEPTED` | `READY` | Vendeur de la commande |
 | Assigner un livreur | `READY` | `ASSIGNED` | Système, avec l’identifiant du livreur |
 | Se désister | `ASSIGNED` | `READY` | Livreur assigné. L’affectation est effacée. |
@@ -23,7 +22,7 @@ Une commande relie un acheteur à un vendeur. Le système confirme le paiement m
 | Signaler un second échec | `IN_DELIVERY` | `RETURN_PENDING` | Livreur assigné. Le client est toujours injoignable. |
 | Confirmer la remise au vendeur | `RETURN_PENDING` | `RETURNED` | Livreur assigné |
 
-`REFUNDED`, `DELIVERED` et `RETURNED` sont des états finaux. Chaque action vérifie le rôle de l’acteur. Pour une commande existante, l’identité d’un acheteur, d’un vendeur ou d’un livreur doit aussi correspondre à celle enregistrée sur la commande. Une action hors tableau est rejetée sans modification ni ajout à l’historique.
+`CANCELLED`, `REFUNDED`, `DELIVERED` et `RETURNED` sont des états finaux. Chaque action vérifie le rôle de l’acteur. Pour une commande existante, l’identité d’un acheteur, d’un vendeur ou d’un livreur doit aussi correspondre à celle enregistrée sur la commande. Une action hors tableau est rejetée sans modification ni ajout à l’historique.
 
 ## Modèle de données
 
@@ -44,6 +43,6 @@ Pour une nouvelle référence valide, le système enregistre le paiement, change
 ## Hypothèses métier
 
 - Une commande a un seul paiement intégral. La notification simulée confirme le succès du paiement pour le montant attendu. La référence est unique sur la plateforme.
-- Une annulation avant confirmation passe à `CANCELLED`. Si le paiement est confirmé plus tard, la commande passe directement à `REFUNDED`. Une annulation après paiement ou un refus du vendeur produit aussi un remboursement simulé en un changement d’état.
+- Dans le scénario simulé, une annulation avant confirmation ferme la commande (`CANCELLED`). La plateforme enregistre un nouveau paiement uniquement si la commande est en attente de paiement. Une annulation après confirmation ou un refus du vendeur entraîne un remboursement simulé (`REFUNDED`).
 - Une commande libérée par un livreur revient à `READY`, disponible pour une nouvelle affectation par le système. Après la prise en charge, le même livreur effectue la nouvelle tentative puis, si nécessaire, rapporte la commande au vendeur.
 - Le retour est considéré comme terminé quand le livreur confirme la remise au vendeur. L’énoncé laisse ouverte la suite financière de ce retour. Le modèle conserve le paiement enregistré à cette étape.
