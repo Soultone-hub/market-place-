@@ -8,9 +8,9 @@ Une commande relie un acheteur à un vendeur. Le système confirme le paiement m
 | --- | --- | --- | --- |
 | Créer la commande | — | `PENDING_PAYMENT` | Acheteur qui passe la commande |
 | Confirmer le paiement | `PENDING_PAYMENT` | `PAID` | Système, à la réception de la notification de succès |
-| Annuler avant paiement | `PENDING_PAYMENT` | `CANCELLED` | Acheteur de la commande |
-| Traiter un paiement arrivé après l’annulation | `CANCELLED` | `REFUNDED` | Système, à la réception d’une première notification de succès |
-| Annuler après paiement | `PAID` | `REFUNDED` | Acheteur de la commande |
+| Annuler avant confirmation du paiement | `PENDING_PAYMENT` | `CANCELLED` | Acheteur de la commande |
+| Traiter une confirmation reçue après l’annulation | `CANCELLED` | `REFUNDED` | Système, à la réception d’une première notification de succès |
+| Annuler après confirmation du paiement | `PAID` | `REFUNDED` | Acheteur de la commande |
 | Refuser la commande | `PAID` | `REFUNDED` | Vendeur de la commande |
 | Accepter la commande | `PAID` | `ACCEPTED` | Vendeur de la commande |
 | Déclarer la commande prête | `ACCEPTED` | `READY` | Vendeur de la commande |
@@ -34,9 +34,13 @@ Les données sont stockées dans PostgreSQL. Les acheteurs (`BUYER`), les vendeu
 | `actors` | `id` (primary key), `role` (`BUYER`, `SELLER`, `COURIER`, or `SYSTEM`) |
 | `orders` | `id` (primary key), `buyer_id`, `seller_id`, `courier_id` (foreign keys to `actors`, with only `courier_id` nullable), `amount_xof` (positive integer), `status`, `failed_delivery_attempts` (0 to 2, defaults to 0) |
 | `payments` | `reference` (primary key), `order_id` (unique foreign key to `orders`), `received_at` (UTC) |
-| `order_history` | `id` (primary key), `order_id` (foreign key to `orders`), `actor_id` (foreign key to `actors`), `actor_role` (role at the time of the action), `action`, `from_status` (null on creation), `to_status`, `occurred_at` (UTC), `reason` (optional) |
+| `order_history` | `id` (primary key), `order_id` (foreign key to `orders`), `actor_id` (foreign key to `actors`), `actor_role` (role at the time of the action), `action`, `from_status` (null on creation), `to_status`, `occurred_at` (UTC), `reason` (optional), `assigned_courier_id` (foreign key to `actors`, required for assignment events and null otherwise) |
 
-Le service lit le rôle depuis `actors` à partir de l’identifiant simulé. Il vérifie aussi le rôle du vendeur à la création et celui du livreur à l’affectation. L’historique se lit par ordre croissant d’identifiant. L’action distingue notamment les motifs de remboursement, et le motif `customer_unreachable` est enregistré à chaque échec de livraison.
+Le service lit le rôle depuis `actors` à partir de l’identifiant simulé. Il vérifie aussi le rôle du vendeur à la création et celui du livreur à l’affectation.
+
+La création de la commande et chaque changement d’état validé ajoutent une entrée à `order_history` dans la même transaction que l’écriture de la commande. Chaque entrée indique l’identifiant et le rôle de l’acteur. L’acheteur est identifié lorsqu’il crée ou annule la commande, et le vendeur lorsqu’il l’accepte, la refuse ou la déclare prête. L’historique se lit par ordre croissant d’identifiant. L’action distingue notamment un remboursement après annulation d’un remboursement après refus. Le motif `customer_unreachable` est enregistré à chaque échec de livraison.
+
+Pour une affectation, l’entrée identifie le système dans `actor_id` et le livreur choisi dans `assigned_courier_id`. En cas de désistement, `orders.courier_id` est vidé et le désistement est tracé. Les entrées d’affectation conservent le livreur et l’heure de chaque affectation successive.
 
 ## Idempotence des notifications de paiement
 
