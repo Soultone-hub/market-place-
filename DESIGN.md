@@ -31,10 +31,10 @@ Les données sont stockées dans PostgreSQL. Les acheteurs (`BUYER`), les vendeu
 
 | Table | Données et contraintes |
 | --- | --- |
-| `actors` | `id` (clé primaire), `role` (`BUYER`, `SELLER`, `COURIER` ou `SYSTEM`) |
-| `orders` | `id` (clé primaire), `buyer_id`, `seller_id`, `courier_id` (clés étrangères vers `actors`, dont seul `courier_id` est nullable), `amount_xof` (entier positif), `status`, `failed_delivery_attempts` (de 0 à 2, initialisé à 0) |
-| `payments` | `reference` (clé primaire), `order_id` (clé étrangère unique vers `orders`), `received_at` (UTC) |
-| `order_history` | `id` (clé primaire), `order_id` (clé étrangère vers `orders`), `actor_id` (clé étrangère vers `actors`), `actor_role` (rôle au moment de l’action), `action`, `from_status` (vide à la création), `to_status`, `occurred_at` (UTC), `reason` (facultatif) |
+| `actors` | `id` (primary key), `role` (`BUYER`, `SELLER`, `COURIER`, or `SYSTEM`) |
+| `orders` | `id` (primary key), `buyer_id`, `seller_id`, `courier_id` (foreign keys to `actors`, with only `courier_id` nullable), `amount_xof` (positive integer), `status`, `failed_delivery_attempts` (0 to 2, defaults to 0) |
+| `payments` | `reference` (primary key), `order_id` (unique foreign key to `orders`), `received_at` (UTC) |
+| `order_history` | `id` (primary key), `order_id` (foreign key to `orders`), `actor_id` (foreign key to `actors`), `actor_role` (role at the time of the action), `action`, `from_status` (null on creation), `to_status`, `occurred_at` (UTC), `reason` (optional) |
 
 Le service lit le rôle depuis `actors` à partir de l’identifiant simulé. Il vérifie aussi le rôle du vendeur à la création et celui du livreur à l’affectation. L’historique se lit par ordre croissant d’identifiant. L’action distingue notamment les motifs de remboursement, et le motif `customer_unreachable` est enregistré à chaque échec de livraison.
 
