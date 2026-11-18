@@ -44,9 +44,20 @@ class PostgresTransaction:
             )
             .exists()
         )
+        last_returning_courier = (
+            select(HistoryRecord.actor_id)
+            .where(
+                HistoryRecord.order_id == order_id,
+                HistoryRecord.action == Action.CONFIRM_RETURN,
+            )
+            .order_by(HistoryRecord.id.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
         eligible_couriers = select(ActorRecord.id).where(
             ActorRecord.role == Role.COURIER,
             ~withdrew_from_order,
+            ActorRecord.id.is_distinct_from(last_returning_courier),
         )
         if courier_id is not None:
             eligible_couriers = eligible_couriers.where(ActorRecord.id == courier_id)

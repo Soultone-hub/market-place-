@@ -16,6 +16,8 @@ ACTION_ROLES = {
     Action.FAIL_DELIVERY: Role.COURIER,
     Action.RETRY_DELIVERY: Role.COURIER,
     Action.CONFIRM_RETURN: Role.COURIER,
+    Action.RESHIP: Role.SELLER,
+    Action.CANCEL_RETURNED: Role.SELLER,
 }
 
 TRANSITIONS = {
@@ -33,6 +35,8 @@ TRANSITIONS = {
     (Status.IN_DELIVERY, Action.FAIL_DELIVERY): Status.RETRY_PENDING,
     (Status.RETRY_PENDING, Action.RETRY_DELIVERY): Status.IN_DELIVERY,
     (Status.RETURN_PENDING, Action.CONFIRM_RETURN): Status.RETURNED,
+    (Status.RETURNED, Action.RESHIP): Status.READY,
+    (Status.RETURNED, Action.CANCEL_RETURNED): Status.REFUNDED,
 }
 
 
@@ -73,6 +77,9 @@ def transition(
         courier_id = assigned_courier_id
     elif action == Action.WITHDRAW:
         courier_id = None
+    elif action == Action.RESHIP:
+        courier_id = None
+        failed_attempts = 0
     elif action == Action.FAIL_DELIVERY:
         if failed_attempts >= 2:
             raise Conflict("The delivery attempt limit has been reached.")

@@ -19,15 +19,17 @@ Une commande relie un acheteur à un vendeur. Le système confirme le paiement m
 | Récupérer la commande | `ASSIGNED` | `IN_DELIVERY` | Livreur assigné |
 | Confirmer la livraison | `IN_DELIVERY` | `DELIVERED` | Livreur assigné |
 | Signaler un premier échec | `IN_DELIVERY` | `RETRY_PENDING` | Livreur assigné. Le client est injoignable. |
-| Relancer la livraison | `RETRY_PENDING` | `IN_DELIVERY` | Même livreur, pour l’unique nouvelle tentative |
+| Relancer la livraison | `RETRY_PENDING` | `IN_DELIVERY` | Même livreur, pour l’unique nouvelle tentative de cet envoi |
 | Signaler un second échec | `IN_DELIVERY` | `RETURN_PENDING` | Livreur assigné. Le client est toujours injoignable. |
 | Confirmer la remise au vendeur | `RETURN_PENDING` | `RETURNED` | Livreur assigné |
+| Réexpédier la commande retournée | `RETURNED` | `READY` | Vendeur de la commande. Réinitialise le compteur d’échecs et libère l’affectation. |
+| Annuler la commande retournée | `RETURNED` | `REFUNDED` | Vendeur de la commande. Remboursement simulé. |
 
 L’acheteur peut annuler depuis `PENDING_PAYMENT` ou `PAID`. Dès que le vendeur accepte la commande (`ACCEPTED`), l’annulation par l’acheteur est interdite.
 
-Après la préparation ou un désistement, le service enregistre la transition vers `READY`, puis tente une affectation automatique dans la même transaction. Il choisit par identifiant croissant parmi les acteurs `COURIER` qui ne se sont pas désistés de cette commande. La réponse contient `ASSIGNED` et l’identifiant du livreur choisi, ou `READY` et un identifiant nul si aucun livreur n’est éligible.
+Après la préparation, un désistement ou une réexpédition, le service enregistre la transition vers `READY`, puis tente une affectation automatique dans la même transaction. Il choisit par identifiant croissant parmi les livreurs éligibles. Il écarte ceux qui se sont désistés de cette commande et celui qui a effectué la dernière remise au vendeur. La réponse contient `ASSIGNED` et l’identifiant du livreur choisi, ou `READY` et un identifiant nul si aucun livreur n’est éligible.
 
-`REFUNDED`, `DELIVERED` et `RETURNED` sont des états finaux. Chaque action vérifie le rôle de l’acteur. Pour une commande existante, l’identité d’un acheteur, d’un vendeur ou d’un livreur doit aussi correspondre à celle enregistrée sur la commande. Une action hors tableau est rejetée sans modification ni ajout à l’historique.
+`RETURNED` attend la décision du vendeur. `REFUNDED` et `DELIVERED` sont des états finaux. Chaque action vérifie le rôle de l’acteur. Pour une commande existante, l’identité d’un acheteur, d’un vendeur ou d’un livreur doit aussi correspondre à celle enregistrée sur la commande. Une action hors tableau est rejetée sans modification ni ajout à l’historique.
 
 ## Modèle de données
 
@@ -36,13 +38,13 @@ Les données sont stockées dans PostgreSQL. Les acheteurs (`BUYER`), les vendeu
 | Table | Données et contraintes |
 | --- | --- |
 | `actors` | `id` (primary key), `role` (`BUYER`, `SELLER`, `COURIER`, or `SYSTEM`) |
-| `orders` | `id` (primary key), `buyer_id`, `seller_id`, `courier_id` (foreign keys to `actors`, with only `courier_id` nullable), `amount_xof` (positive integer), `status`, `failed_delivery_attempts` (0 to 2, defaults to 0) |
+| `orders` | `id` (primary key), `buyer_id`, `seller_id`, `courier_id` (foreign keys to `actors`, with only `courier_id` nullable), `amount_xof` (positive integer), `status`, `failed_delivery_attempts` (0 to 2 for the current shipment, defaults to 0) |
 | `payments` | `reference` (primary key), `order_id` (unique foreign key to `orders`), `received_at` (UTC) |
 | `order_history` | `id` (primary key), `order_id` (foreign key to `orders`), `actor_id` (foreign key to `actors`), `actor_role` (role at the time of the action), `action`, `from_status` (null on creation), `to_status`, `occurred_at` (UTC), `reason` (optional), `assigned_courier_id` (foreign key to `actors`, required for assignment events and null otherwise) |
 
 Le service lit le rôle depuis `actors` à partir de l’identifiant simulé. Il vérifie aussi le rôle du vendeur à la création et celui du livreur à l’affectation.
 
-La création de la commande et chaque changement d’état validé ajoutent une entrée à `order_history` dans la même transaction que l’écriture de la commande. Chaque entrée indique l’identifiant et le rôle de l’acteur. L’acheteur est identifié lorsqu’il crée ou annule la commande, et le vendeur lorsqu’il l’accepte, la refuse ou la déclare prête. L’historique se lit par ordre croissant d’identifiant. L’action distingue notamment un remboursement après annulation d’un remboursement après refus. Le motif `customer_unreachable` est enregistré à chaque échec de livraison.
+La création de la commande et chaque changement d’état validé ajoutent une entrée à `order_history` dans la même transaction que l’écriture de la commande. Chaque entrée indique l’identifiant et le rôle de l’acteur. L’acheteur est identifié lorsqu’il crée ou annule la commande, et le vendeur lorsqu’il l’accepte, la refuse, la déclare prête ou décide de la suite après retour. L’historique se lit par ordre croissant d’identifiant. Les actions `reship` et `cancel_returned` identifient la décision prise après la remise. Le motif `customer_unreachable` est enregistré à chaque échec de livraison.
 
 Pour une affectation, l’entrée identifie le système dans `actor_id` et le livreur choisi dans `assigned_courier_id`. Une affectation automatique porte le motif `automatic_assignment`. En cas de désistement, le service trace la libération de la commande avant l’éventuelle nouvelle affectation. Les entrées d’affectation conservent le livreur et l’heure de chaque affectation successive.
 
@@ -58,9 +60,9 @@ Pour une nouvelle référence valide, l’enregistrement du paiement, la mise à
 
 - Une commande a un seul paiement intégral. La notification simulée confirme le succès du paiement pour le montant attendu. La référence est unique sur la plateforme.
 - Une annulation avant confirmation passe à `CANCELLED`. Si le paiement est confirmé plus tard, la commande passe directement à `REFUNDED`. Une annulation après paiement ou un refus du vendeur produit aussi un remboursement simulé en un changement d’état.
-- Le choix du livreur repose sur le rôle et l’historique des désistements de la commande. La charge de travail des livreurs est hors périmètre de cet exercice. Le système peut indiquer explicitement un livreur éligible pour reprendre une commande en attente, y compris une commande créée avant l’automatisation. Une commande attend en `READY` jusqu’à cette reprise si aucun livreur n’est trouvé lors de la tentative automatique.
-- Après la prise en charge, le même livreur effectue la nouvelle tentative puis, si nécessaire, rapporte la commande au vendeur.
-- Le retour est considéré comme terminé quand le livreur confirme la remise au vendeur. L’énoncé laisse ouverte la suite financière de ce retour. Le modèle conserve le paiement enregistré à cette étape.
+- La charge de travail des livreurs est hors périmètre de cet exercice. Le système peut indiquer explicitement un livreur éligible pour reprendre une commande en attente.
+- Après la prise en charge, le même livreur peut faire une nouvelle tentative puis, si nécessaire, rapporte le colis au vendeur. Le retour s’achève quand le livreur confirme la remise.
+- Pour la suite après retour, chaque réexpédition ouvre un nouvel envoi de la même commande avec deux essais au maximum. Le paiement initial et l’historique sont conservés. Si le vendeur annule après le retour, l’état `REFUNDED` représente le remboursement simulé et la référence initiale reste enregistrée pour l’audit et l’idempotence.
 
 ## Diagramme des états
 
@@ -81,7 +83,8 @@ stateDiagram-v2
     RETRY_PENDING --> IN_DELIVERY : Relancer la livraison
     IN_DELIVERY --> RETURN_PENDING : Second échec
     RETURN_PENDING --> RETURNED : Confirmer la remise au vendeur
+    RETURNED --> READY : Réexpédier la commande retournée
+    RETURNED --> REFUNDED : Annuler la commande retournée
     REFUNDED --> [*]
     DELIVERED --> [*]
-    RETURNED --> [*]
 ```

@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 
 from .domain import SYSTEM_ACTOR_ID, Role
 from .persistence.postgres_models import ActorRecord, Base
+from .persistence.postgres_schema import upgrade_history_action_constraint
 
 DEMO_ACTORS = {
     "buyer-1": Role.BUYER,
@@ -42,7 +43,9 @@ def configured_sessions() -> sessionmaker:
 
 def initialize(sessions: sessionmaker) -> None:
     with sessions.begin() as session:
-        Base.metadata.create_all(session.connection())
+        connection = session.connection()
+        Base.metadata.create_all(connection)
+        upgrade_history_action_constraint(connection)
         session.execute(
             insert(ActorRecord)
             .values([{"id": actor_id, "role": role} for actor_id, role in DEMO_ACTORS.items()])

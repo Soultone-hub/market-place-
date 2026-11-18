@@ -38,6 +38,8 @@ class Action(StrEnum):
     FAIL_DELIVERY = "fail_delivery"
     RETRY_DELIVERY = "retry_delivery"
     CONFIRM_RETURN = "confirm_return"
+    RESHIP = "reship"
+    CANCEL_RETURNED = "cancel_returned"
 
 
 @dataclass(frozen=True)

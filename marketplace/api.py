@@ -71,6 +71,7 @@ class OrderAction(BaseModel):
         Action.CANCEL, Action.REFUSE, Action.ACCEPT, Action.MARK_READY, Action.ASSIGN,
         Action.WITHDRAW, Action.PICK_UP, Action.DELIVER, Action.FAIL_DELIVERY,
         Action.RETRY_DELIVERY, Action.CONFIRM_RETURN,
+        Action.RESHIP, Action.CANCEL_RETURNED,
     ]
     courier_id: ActorId | None = None
     reason: Annotated[str, StringConstraints(max_length=MAX_REASON)] | None = None
@@ -171,9 +172,10 @@ def create_app(
         tags=[ACTIONS_TAG],
         summary="Appliquer une action",
         description=(
-            "Après `mark_ready` ou `withdraw`, le système choisit un livreur éligible. "
+            "Après `mark_ready`, `withdraw` ou `reship`, le système choisit un livreur éligible. "
             "Si la réponse indique `ASSIGNED`, utilise son `courier_id` pour la suite. "
-            "Si elle indique `READY`, la commande attend un livreur."
+            "Si elle indique `READY`, la commande attend un livreur. "
+            "Depuis `RETURNED`, le vendeur peut choisir `reship` ou `cancel_returned`."
         ),
         response_model=OrderView,
         responses={403: {"model": ErrorView}, 404: {"model": ErrorView}, 409: {"model": ErrorView}},

@@ -67,7 +67,7 @@ class OrderService:
                 require_role(actor, action)
                 require_participant(transaction, courier_id, Role.COURIER)
                 if transaction.find_eligible_courier_id(order.id, courier_id=courier_id) is None:
-                    raise InvalidInput("The courier has already withdrawn from this order.")
+                    raise InvalidInput("The courier is not eligible for this order.")
 
             updated = apply_order_transition(
                 transaction, order, actor, action, courier_id=courier_id, reason=reason

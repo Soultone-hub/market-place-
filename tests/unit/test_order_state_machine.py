@@ -65,6 +65,29 @@ def test_second_failure_requires_return():
     assert transition(returning, Action.CONFIRM_RETURN, COURIER).status is Status.RETURNED
 
 
+def test_reshipping_a_returned_order_resets_delivery_attempts():
+    returned = order_in(Status.RETURNED, COURIER.id, failures=2)
+
+    reshipped = transition(returned, Action.RESHIP, SELLER)
+
+    assert reshipped.status is Status.READY
+    assert reshipped.courier_id is None
+    assert reshipped.failed_delivery_attempts == 0
+
+
+@pytest.mark.parametrize("action", [Action.RESHIP, Action.CANCEL_RETURNED])
+def test_only_order_seller_can_resolve_a_confirmed_return(action):
+    returning = order_in(Status.RETURN_PENDING, COURIER.id, failures=2)
+    with pytest.raises(Conflict):
+        transition(returning, action, SELLER)
+
+    returned = order_in(Status.RETURNED, COURIER.id, failures=2)
+    other_seller = Actor("seller-2", Role.SELLER)
+    for actor in (other_seller, BUYER, COURIER, SYSTEM):
+        with pytest.raises(Forbidden):
+            transition(returned, action, actor)
+
+
 def test_payment_confirmed_after_cancellation_is_refunded():
     result = transition(order_in(Status.CANCELLED), Action.CONFIRM_PAYMENT, SYSTEM)
 
