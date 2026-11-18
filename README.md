@@ -1,70 +1,130 @@
 # Marketplace
 
-Exercice technique sur le cycle d’une commande, de sa création au paiement puis à la livraison ou au retour chez le vendeur.
+API d’exercice technique pour suivre une commande, de sa création jusqu’à la livraison ou au retour au vendeur. Le projet utilise Python, FastAPI, SQLAlchemy et PostgreSQL. Le paiement et l’identité des acteurs sont simulés.
 
-## Démarrage
+## Règles métier
 
-Il faut Python 3.11 ou plus récent et un serveur PostgreSQL. Utilise la base locale `market place` et un compte PostgreSQL autorisé à y créer les tables. Pour créer la base si nécessaire, exécute `createdb -U postgres "market place"`.
+- L’acheteur crée sa commande auprès d’un vendeur. Le système confirme le paiement à partir d’une référence unique. Le rejeu de la même notification renvoie l’état courant de la commande et conserve une seule écriture de paiement.
+- Le vendeur peut accepter ou refuser une commande payée. L’acheteur peut l’annuler jusqu’à l’acceptation. Le refus d’une commande payée, son annulation ou une confirmation de paiement reçue après l’annulation déclenchent un remboursement simulé.
+- Quand le vendeur déclare la commande prête, le système choisit un livreur. Si le livreur se désiste avant la prise en charge, le système cherche un remplaçant parmi les livreurs qui ne se sont pas déjà désistés de cette commande. Sans candidat, la commande attend en `READY`.
+- Si la livraison échoue, le livreur peut effectuer une seule nouvelle tentative. Après le second échec, il confirme le retour de la commande au vendeur.
+- Chaque transition ajoute une entrée d’historique avec l’acteur, son rôle, la date et l’heure, les états de départ et d’arrivée et, le cas échéant, le motif ou le livreur affecté.
 
-Crée ou complète le fichier `.env` à la racine du projet.
+La [note de conception](DESIGN.md) détaille les transitions, les rôles autorisés, le modèle de données, les hypothèses et le diagramme Mermaid.
+
+## Démarrage local
+
+Il faut **Python 3.11 ou plus récent** et un serveur **PostgreSQL** démarré. Les commandes suivantes s’exécutent depuis la racine du dépôt.
+
+### Préparer la base et la connexion
+
+Utilise une base PostgreSQL existante et un compte autorisé à y créer les tables. La commande suivante crée une base locale appelée `market place`.
+
+```sh
+createdb -U postgres "market place"
+```
+
+Crée un fichier `.env` à la racine du dépôt avec l’URL de ta base. Remplace les valeurs d’exemple par celles de ton installation.
 
 ```dotenv
 DATABASE_URL=postgresql+psycopg://postgres:TON_MOT_DE_PASSE@localhost:5432/market%20place
 ```
 
-Adapte le compte, le mot de passe, l’hôte et le port à ton installation. Dans l’URL, l’espace dans `market place` s’écrit `%20`. Encode aussi les caractères spéciaux du mot de passe, par exemple `@` en `%40`. Une variable `DATABASE_URL` déjà définie dans le terminal prend la priorité sur le fichier.
+Encode les espaces du nom de la base en `%20` et les caractères réservés du mot de passe, par exemple `@` en `%40`. Une variable `DATABASE_URL` déjà définie dans le terminal prend la priorité sur `.env`. Git ignore ce fichier.
+
+### Installer et lancer l’application
+
+Sur **Windows**, lance ces commandes dans PowerShell.
 
 ```powershell
 python -m venv .venv
-& .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements-dev.txt
-
-python -m marketplace.db
-python -m uvicorn marketplace.api:create_app --factory
+& .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+& .\.venv\Scripts\python.exe -m marketplace.db
+& .\.venv\Scripts\python.exe -m uvicorn marketplace.api:create_app --factory
 ```
 
-Sous Linux ou macOS, active l’environnement avec `source .venv/bin/activate`.
-
-`python -m marketplace.db` crée les tables du projet et les identités de démonstration. Tu peux relancer cette commande pour compléter l’initialisation.
-
-Si Windows bloque le binaire de Psycopg, utilise la bibliothèque fournie avec ton installation PostgreSQL. Adapte le chemin au dossier `bin` de ta version.
+Si Windows bloque le binaire fourni avec Psycopg, ajoute le dossier `bin` de ton installation PostgreSQL au `PATH` et sélectionne l’implémentation Python du pilote. Exécute les deux lignes suivantes avant l’initialisation et le lancement, en adaptant le numéro de version.
 
 ```powershell
 $env:PATH = 'C:\Program Files\PostgreSQL\18\bin;' + $env:PATH
 $env:PSYCOPG_IMPL = 'python'
 ```
 
-## Essayer l’API
+Sur **Linux ou macOS**, active l’environnement virtuel avant de lancer le serveur.
 
-Ouvre [Swagger UI sur /docs](http://127.0.0.1:8000/docs). Les requêtes qui modifient une commande utilisent l’en-tête `X-Actor-Id`.
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+python -m marketplace.db
+python -m uvicorn marketplace.api:create_app --factory
+```
 
-| Requête | Données et identité |
+`python -m marketplace.db` crée les tables manquantes et ajoute les acteurs de démonstration. Tu peux relancer cette commande sur une base déjà initialisée. Ouvre ensuite [Swagger UI](http://127.0.0.1:8000/docs). Le contrat OpenAPI est disponible sur [`/openapi.json`](http://127.0.0.1:8000/openapi.json).
+
+## Acteurs de démonstration
+
+| Rôle | Identifiant |
 | --- | --- |
-| `POST /orders` | `{"seller_id":"seller-1","amount_xof":7500}` avec `buyer-1`. La réponse contient l’ID de la commande. |
-| `POST /orders/{id}/payment-notifications` | `{"reference":"mobile-money-001"}` avec `system`. Choisis une nouvelle référence pour chaque nouvelle commande. Pour simuler un doublon, renvoie la même référence à la même commande. |
-| `POST /orders/{id}/actions` | `{"action":"accept"}` avec `seller-1`, puis `mark_ready` avec le même vendeur. |
-| `POST /orders/{id}/actions` | `{"action":"assign","courier_id":"courier-1"}` avec `system`, puis `pick_up` et `deliver` avec `courier-1`. |
-| `GET /orders/{id}` | Renvoie la commande et son historique dans l’ordre des transitions. |
+| Acheteur | `buyer-1` |
+| Vendeur | `seller-1` |
+| Livreurs | `courier-1`, `courier-2` |
+| Système | `system` |
 
-Le service déduit le rôle depuis l’identité de démonstration enregistrée en base. Le livreur `courier-2` permet d’essayer une réaffectation après `withdraw`. Les actions acceptent un champ `reason` facultatif. Le service enregistre automatiquement `customer_unreachable` pour `fail_delivery`.
+Les opérations d’écriture utilisent l’en-tête `X-Actor-Id`. Le service retrouve le rôle de cet acteur en base et vérifie son identité quand l’action est réservée à un participant de la commande. Pour utiliser un autre acheteur, vendeur ou livreur, ajoute son identifiant unique et l’un des rôles `BUYER`, `SELLER` ou `COURIER` dans la table `actors`.
+
+## Démonstration dans Swagger
+
+Les routes sont présentées dans l’ordre **Création**, **Paiement**, **Actions**, **Suivi**. Le menu **Examples** remplit le corps JSON. Sélectionne l’exemple correspondant à l’acteur dans `X-Actor-Id`, puis clique sur **Execute**.
+
+1. **Créer.** Ouvre `POST /orders` avec `buyer-1`. Choisis l’exemple de 7 500 XOF avec `seller-1`. La réponse `201` indique `PENDING_PAYMENT`. Copie son `id` dans `order_id` pour les étapes suivantes.
+2. **Payer.** Ouvre `POST /orders/{order_id}/payment-notifications` avec `system`. Utilise une référence neuve, par exemple `demo-commande-42` si la commande porte l’identifiant 42. La réponse indique `PAID`. Réexécute l’appel avec le même identifiant et la même référence pour montrer l’idempotence.
+3. **Accepter et préparer.** Dans `POST /orders/{order_id}/actions`, sélectionne **Accepter** (`accept`), puis **Marquer prête** (`mark_ready`), avec `seller-1`. Le système déclenche l’affectation. Si la réponse est `ASSIGNED`, relève le `courier_id` retourné.
+4. **Récupérer et livrer.** Sélectionne **Récupérer** (`pick_up`), puis **Livrer** (`deliver`), avec le livreur indiqué dans `courier_id`. La commande passe à `IN_DELIVERY`, puis à `DELIVERED`.
+5. **Consulter le suivi.** Ouvre `GET /orders/{order_id}`. Vérifie l’état final, la présence d’une seule transition de paiement et les deux événements distincts `ACCEPTED → READY` par le vendeur et `READY → ASSIGNED` par le système.
+
+Avec les acteurs initialisés par le projet, le système choisit d’abord `courier-1`. Pour montrer une réaffectation, utilise **Se désister** (`withdraw`) avant **Récupérer**. La réponse indique le remplaçant si un autre livreur est éligible. L’historique conserve les affectations successives.
+
+Si la réponse indique `READY` et `courier_id: null`, la commande attend un livreur. L’exemple **Reprendre une affectation en attente** permet à `system` d’indiquer un livreur éligible, par exemple après son ajout en base. La sélection automatique se fait par ordre d’identifiant parmi les livreurs qui ne se sont pas déjà désistés de cette commande.
+
+## Contrat HTTP
+
+| Route | Entrée et résultat |
+| --- | --- |
+| `POST /orders` | Acheteur. Corps avec `seller_id` et `amount_xof`, montant entier positif en XOF. Renvoie la commande créée avec le statut HTTP `201`. |
+| `POST /orders/{order_id}/payment-notifications` | Système. Corps avec `reference`. Renvoie la commande courante avec le statut HTTP `200`, y compris lors d’un rejeu valide. |
+| `POST /orders/{order_id}/actions` | Acteur autorisé pour l’action. Corps avec `action`, `reason` facultatif et `courier_id` requis pour `assign`. Renvoie l’état final de la commande après l’action avec le statut HTTP `200`. |
+| `GET /orders/{order_id}` | Renvoie la commande et son historique ordonné dans `order` et `history`. |
+
+L’API utilise `403` pour une action non autorisée, `404` pour une commande introuvable, `409` pour un conflit de transition ou de paiement et `422` pour une entrée invalide.
+
+## Architecture
+
+| Partie | Responsabilité |
+| --- | --- |
+| [`marketplace/domain/`](marketplace/domain/) | Modèles métier, rôles et machine à états en Python. |
+| [`marketplace/services/`](marketplace/services/) | Services de commande et de paiement. Les services utilisent des interfaces de transaction ciblées. |
+| [`marketplace/persistence/`](marketplace/persistence/) | Modèles SQLAlchemy, requêtes et transactions PostgreSQL. |
+| [`marketplace/db.py`](marketplace/db.py) | Connexion, initialisation des tables et insertion des acteurs de démonstration. |
+| [`marketplace/api.py`](marketplace/api.py) et [`marketplace/swagger_demo.py`](marketplace/swagger_demo.py) | Routes FastAPI, réponses HTTP et exemples de démonstration Swagger. |
+
+Le verrou de ligne PostgreSQL sérialise les actions concurrentes portant sur une même commande. Les contraintes d’unicité empêchent qu’une référence soit utilisée sur deux commandes ou qu’une commande reçoive deux paiements. La transaction valide ensemble les écritures de paiement, l’état de la commande et les entrées d’historique.
 
 ## Tests
 
-Crée une base PostgreSQL dédiée, par exemple `market place test`, et donne au compte de test le droit d’y créer des schémas. La suite crée un schéma temporaire dans cette base, puis le supprime à la fin.
+La suite comporte **19 tests**. Les tests unitaires couvrent la machine à états et les exemples OpenAPI. Les tests d’intégration vérifient notamment la livraison, l’affectation et la réaffectation, le refus et le remboursement, le retour au vendeur, les rôles, l’idempotence, les actions concurrentes et le rollback en cas d’échec d’écriture de l’historique.
+
+Pour les tests d’intégration, utilise une base dédiée telle que `market place test` et un compte PostgreSQL qui peut y créer des schémas. Les fixtures créent des schémas temporaires et les suppriment après les tests. Définis `TEST_DATABASE_URL` dans le terminal.
 
 ```powershell
-$env:TEST_DATABASE_URL = 'postgresql+psycopg://postgres:mot-de-passe@localhost:5432/market%20place%20test'
-python -m pytest -q
+$env:TEST_DATABASE_URL = 'postgresql+psycopg://postgres:TON_MOT_DE_PASSE@localhost:5432/market%20place%20test'
+& .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Sous Linux ou macOS, configure `TEST_DATABASE_URL` avec `export`. La commande `python -m pytest -q tests/unit` exécute les tests de la machine à états. Les tests dans `tests/integration` couvrent l’API, les notifications de paiement, l’historique et les actions concurrentes. Ils sont ignorés quand `TEST_DATABASE_URL` est absent.
+Sous Linux ou macOS, utilise `export TEST_DATABASE_URL='…'` et `python -m pytest -q` depuis l’environnement virtuel activé. Pour exécuter uniquement les tests sans base de données, ajoute `tests/unit` à la commande pytest. La suite ignore les tests d’intégration quand `TEST_DATABASE_URL` est absente.
 
-## Structure
+## Utilisation de l’IA
 
-- `marketplace/domain/` contient les types métier et la machine à états de la commande.
-- `marketplace/services/` contient le service des commandes, le service de paiement et le code partagé qui applique une transition et écrit son historique. Les services reçoivent leurs transactions via les interfaces de `transaction_protocols.py`.
-- `marketplace/persistence/` contient les modèles SQLAlchemy et le dépôt PostgreSQL qui exécute les requêtes et gère les transactions.
-- `marketplace/db.py` configure la connexion, initialise le schéma et ajoute les acteurs de démonstration.
-- `marketplace/api.py` expose les opérations en HTTP. Les tests d’intégration appellent aussi le service directement.
+Le projet a commencé par un travail approfondi de conception. Les états et les transitions, les rôles, les hypothèses sur les paiements tardifs et les remboursements, ainsi que les garanties d’idempotence et de concurrence ont été discutés et consignés dans [`DESIGN.md`](DESIGN.md) avant l’implémentation.
 
-Le tableau des transitions et les hypothèses métier figurent dans [DESIGN.md](DESIGN.md).
+J’ai ensuite utilisé **Codex** pour mettre cette conception en code. Il a généré et révisé la machine à états, les services Python, la persistance PostgreSQL et les routes FastAPI. Il a aussi aidé à écrire les tests pytest, à réorganiser les modules par responsabilité et à préparer la démo Swagger. Le code a été relu et vérifié par des tests unitaires et des tests d’intégration avec PostgreSQL.

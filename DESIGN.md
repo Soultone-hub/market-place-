@@ -14,7 +14,7 @@ Une commande relie un acheteur à un vendeur. Le système confirme le paiement m
 | Refuser la commande | `PAID` | `REFUNDED` | Vendeur de la commande |
 | Accepter la commande | `PAID` | `ACCEPTED` | Vendeur de la commande |
 | Déclarer la commande prête | `ACCEPTED` | `READY` | Vendeur de la commande |
-| Assigner un livreur | `READY` | `ASSIGNED` | Système, avec l’identifiant du livreur |
+| Assigner un livreur | `READY` | `ASSIGNED` | Système, si un livreur éligible est choisi |
 | Se désister | `ASSIGNED` | `READY` | Livreur assigné. L’affectation est effacée. |
 | Récupérer la commande | `ASSIGNED` | `IN_DELIVERY` | Livreur assigné |
 | Confirmer la livraison | `IN_DELIVERY` | `DELIVERED` | Livreur assigné |
@@ -24,6 +24,8 @@ Une commande relie un acheteur à un vendeur. Le système confirme le paiement m
 | Confirmer la remise au vendeur | `RETURN_PENDING` | `RETURNED` | Livreur assigné |
 
 L’acheteur peut annuler depuis `PENDING_PAYMENT` ou `PAID`. Dès que le vendeur accepte la commande (`ACCEPTED`), l’annulation par l’acheteur est interdite.
+
+Après la préparation ou un désistement, le service enregistre la transition vers `READY`, puis tente une affectation automatique dans la même transaction. Il choisit par identifiant croissant parmi les acteurs `COURIER` qui ne se sont pas désistés de cette commande. La réponse contient `ASSIGNED` et l’identifiant du livreur choisi, ou `READY` et un identifiant nul si aucun livreur n’est éligible.
 
 `REFUNDED`, `DELIVERED` et `RETURNED` sont des états finaux. Chaque action vérifie le rôle de l’acteur. Pour une commande existante, l’identité d’un acheteur, d’un vendeur ou d’un livreur doit aussi correspondre à celle enregistrée sur la commande. Une action hors tableau est rejetée sans modification ni ajout à l’historique.
 
@@ -42,7 +44,7 @@ Le service lit le rôle depuis `actors` à partir de l’identifiant simulé. Il
 
 La création de la commande et chaque changement d’état validé ajoutent une entrée à `order_history` dans la même transaction que l’écriture de la commande. Chaque entrée indique l’identifiant et le rôle de l’acteur. L’acheteur est identifié lorsqu’il crée ou annule la commande, et le vendeur lorsqu’il l’accepte, la refuse ou la déclare prête. L’historique se lit par ordre croissant d’identifiant. L’action distingue notamment un remboursement après annulation d’un remboursement après refus. Le motif `customer_unreachable` est enregistré à chaque échec de livraison.
 
-Pour une affectation, l’entrée identifie le système dans `actor_id` et le livreur choisi dans `assigned_courier_id`. En cas de désistement, `orders.courier_id` est vidé et le désistement est tracé. Les entrées d’affectation conservent le livreur et l’heure de chaque affectation successive.
+Pour une affectation, l’entrée identifie le système dans `actor_id` et le livreur choisi dans `assigned_courier_id`. Une affectation automatique porte le motif `automatic_assignment`. En cas de désistement, le service trace la libération de la commande avant l’éventuelle nouvelle affectation. Les entrées d’affectation conservent le livreur et l’heure de chaque affectation successive.
 
 ## Idempotence des notifications de paiement
 
@@ -56,7 +58,8 @@ Pour une nouvelle référence valide, l’enregistrement du paiement, la mise à
 
 - Une commande a un seul paiement intégral. La notification simulée confirme le succès du paiement pour le montant attendu. La référence est unique sur la plateforme.
 - Une annulation avant confirmation passe à `CANCELLED`. Si le paiement est confirmé plus tard, la commande passe directement à `REFUNDED`. Une annulation après paiement ou un refus du vendeur produit aussi un remboursement simulé en un changement d’état.
-- Une commande libérée par un livreur revient à `READY`, disponible pour une nouvelle affectation par le système. Après la prise en charge, le même livreur effectue la nouvelle tentative puis, si nécessaire, rapporte la commande au vendeur.
+- Le choix du livreur repose sur le rôle et l’historique des désistements de la commande. La charge de travail des livreurs est hors périmètre de cet exercice. Le système peut indiquer explicitement un livreur éligible pour reprendre une commande en attente, y compris une commande créée avant l’automatisation. Une commande attend en `READY` jusqu’à cette reprise si aucun livreur n’est trouvé lors de la tentative automatique.
+- Après la prise en charge, le même livreur effectue la nouvelle tentative puis, si nécessaire, rapporte la commande au vendeur.
 - Le retour est considéré comme terminé quand le livreur confirme la remise au vendeur. L’énoncé laisse ouverte la suite financière de ce retour. Le modèle conserve le paiement enregistré à cette étape.
 
 ## Diagramme des états
@@ -70,7 +73,7 @@ stateDiagram-v2
     PAID --> REFUNDED : Annuler ou refuser
     PAID --> ACCEPTED : Accepter
     ACCEPTED --> READY : Déclarer prête
-    READY --> ASSIGNED : Assigner
+    READY --> ASSIGNED : Affecter automatiquement ou reprendre
     ASSIGNED --> READY : Se désister
     ASSIGNED --> IN_DELIVERY : Récupérer la commande
     IN_DELIVERY --> DELIVERED : Confirmer la livraison
