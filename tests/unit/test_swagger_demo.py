@@ -44,10 +44,27 @@ def test_swagger_exposes_examples_for_the_order_demo():
     for actor in ("buyer-1", "seller-1", "system", "courier-1", "courier-2"):
         assert example_actors[actor] == actor
 
+    examples = body_examples(order_actions)
     actions = {
         name: OrderAction.model_validate(example["value"])
-        for name, example in body_examples(order_actions).items()
+        for name, example in examples.items()
     }
-    for action in ("accept", "mark_ready", "assign", "pick_up", "deliver"):
+    for action in (
+        "accept",
+        "mark_ready",
+        "assign",
+        "pick_up",
+        "deliver",
+        "fail_delivery",
+        "retry_delivery",
+        "confirm_return",
+        "reship",
+        "cancel_returned",
+    ):
         assert actions[action].action == action
     assert actions["assign"].courier_id == "courier-1"
+    assert actions["reship"].courier_id is None
+    assert "Confirmer la livraison" in examples["deliver"]["summary"]
+    assert "Confirmer la remise au vendeur" in examples["confirm_return"]["summary"]
+    assert "Réexpédier la commande retournée" in examples["reship"]["summary"]
+    assert "Annuler la commande retournée" in examples["cancel_returned"]["summary"]

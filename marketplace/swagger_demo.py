@@ -8,11 +8,14 @@ HISTORY_TAG = "4. Suivi"
 DEMO_TAGS = [
     {"name": CREATE_TAG, "description": "Créer une commande de démonstration."},
     {"name": PAYMENT_TAG, "description": "Confirmer le paiement ou rejouer une notification."},
-    {"name": ACTIONS_TAG, "description": "Avancer la commande et suivre son affectation automatique."},
+    {
+        "name": ACTIONS_TAG,
+        "description": "Affecter un livreur, confirmer la livraison et traiter un retour.",
+    },
     {"name": HISTORY_TAG, "description": "Vérifier l’état courant et les transitions enregistrées."},
 ]
 
-DEMO_GUIDE = """## Démo rapide
+DEMO_GUIDE = """## Démo rapide · livraison confirmée
 
 Ouvre les sections dans l’ordre et clique sur **Execute** pour envoyer chaque requête.
 
@@ -21,12 +24,33 @@ Ouvre les sections dans l’ordre et clique sur **Execute** pour envoyer chaque 
    Pour tester un doublon, clique deux fois sur **Execute** avec la même référence.
 3. **Actions**. Le menu **Examples** remplit le JSON. Sélectionne aussi l’acteur
    indiqué dans le nom de l’exemple, sous `X-Actor-Id`.
-   Enchaîne **Accepter**, **Marquer prête**, **Récupérer**, **Livrer**.
+   Enchaîne **Accepter**, **Marquer prête**, **Récupérer**, **Confirmer la livraison**.
    Après **Marquer prête**, si la réponse est `ASSIGNED`, sélectionne le
-   `courier_id` renvoyé comme acteur pour **Récupérer** et **Livrer**.
-   Si elle est `READY`, la commande attend un livreur éligible. L’exemple
+   `courier_id` renvoyé comme acteur pour **Récupérer** et **Confirmer la livraison**.
+   Si la réponse est `READY`, la commande attend un livreur éligible. L’exemple
    **Reprendre une affectation en attente** permet à `system` d’en indiquer un.
+   La confirmation fait passer la commande de `IN_DELIVERY` à `DELIVERED`.
 4. **Suivi**. Vérifie l’état `DELIVERED` et les transitions, dont l’affectation par `system`.
+
+## Variante · deux échecs et retour au vendeur
+
+Crée une autre commande et avance jusqu’à **Récupérer**. Garde le même livreur
+dans `X-Actor-Id` pour les actions suivantes.
+
+1. **Signaler un échec de livraison** → `RETRY_PENDING`.
+2. **Relancer après le premier échec** → `IN_DELIVERY`.
+3. **Signaler un échec de livraison** une seconde fois → `RETURN_PENDING`.
+4. **Confirmer la remise au vendeur** → `RETURNED`.
+
+Après la remise, sélectionne `seller-1` dans `X-Actor-Id` et choisis une suite.
+
+- **Réexpédier la commande retournée**. Garde le même `order_id`. Le compteur revient à zéro
+  et le système cherche un autre livreur. Si la réponse est `ASSIGNED`, utilise le nouveau
+  `courier_id` pour **Récupérer**. Si elle est `READY`, la commande attend un livreur éligible.
+- **Annuler la commande retournée**. La commande passe à `REFUNDED` par remboursement simulé.
+
+Dans **Suivi**, vérifie les deux échecs, la remise au vendeur et la décision du vendeur.
+Pour essayer les deux décisions, utilise deux commandes arrivées à `RETURNED`.
 """
 
 BUYER_EXAMPLES = {
@@ -71,12 +95,16 @@ ACTION_EXAMPLES = {
         "value": {"action": Action.PICK_UP.value},
     },
     "deliver": {
-        "summary": "4. Livrer · livreur affecté",
+        "summary": "4. Confirmer la livraison · livreur affecté",
+        "description": "Après la remise à l’acheteur, passe de IN_DELIVERY à DELIVERED.",
         "value": {"action": Action.DELIVER.value},
     },
     "assign": {
         "summary": "Reprendre une affectation en attente · system",
-        "description": "Pour une commande READY, indique un livreur qui ne s’est pas désisté.",
+        "description": (
+            "Pour une commande READY, indique un livreur éligible. "
+            "Après un retour, choisis un autre livreur que celui qui a ramené le colis."
+        ),
         "value": {"action": Action.ASSIGN.value, "courier_id": "courier-1"},
     },
     "refuse": {
@@ -94,14 +122,27 @@ ACTION_EXAMPLES = {
     },
     "fail_delivery": {
         "summary": "Signaler un échec de livraison · livreur affecté",
+        "description": "Le premier échec donne RETRY_PENDING et le second RETURN_PENDING.",
         "value": {"action": Action.FAIL_DELIVERY.value},
     },
     "retry_delivery": {
         "summary": "Relancer après le premier échec · livreur affecté",
+        "description": "L’unique nouvelle tentative de cet envoi ramène la commande à IN_DELIVERY.",
         "value": {"action": Action.RETRY_DELIVERY.value},
     },
     "confirm_return": {
-        "summary": "Confirmer le retour après le second échec · livreur affecté",
+        "summary": "Confirmer la remise au vendeur · livreur affecté",
+        "description": "Passe de RETURN_PENDING à RETURNED et attend la décision du vendeur.",
         "value": {"action": Action.CONFIRM_RETURN.value},
+    },
+    "reship": {
+        "summary": "Réexpédier la commande retournée · seller-1",
+        "description": "Lance un nouvel envoi avec la même commande et cherche un autre livreur.",
+        "value": {"action": Action.RESHIP.value},
+    },
+    "cancel_returned": {
+        "summary": "Annuler la commande retournée · seller-1",
+        "description": "Passe de RETURNED à REFUNDED par remboursement simulé.",
+        "value": {"action": Action.CANCEL_RETURNED.value},
     },
 }
