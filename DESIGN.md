@@ -58,3 +58,27 @@ Pour une nouvelle référence valide, l’enregistrement du paiement, la mise à
 - Une annulation avant confirmation passe à `CANCELLED`. Si le paiement est confirmé plus tard, la commande passe directement à `REFUNDED`. Une annulation après paiement ou un refus du vendeur produit aussi un remboursement simulé en un changement d’état.
 - Une commande libérée par un livreur revient à `READY`, disponible pour une nouvelle affectation par le système. Après la prise en charge, le même livreur effectue la nouvelle tentative puis, si nécessaire, rapporte la commande au vendeur.
 - Le retour est considéré comme terminé quand le livreur confirme la remise au vendeur. L’énoncé laisse ouverte la suite financière de ce retour. Le modèle conserve le paiement enregistré à cette étape.
+
+## Diagramme des états
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING_PAYMENT : Créer la commande
+    PENDING_PAYMENT --> PAID : Confirmer le paiement
+    PENDING_PAYMENT --> CANCELLED : Annuler
+    CANCELLED --> REFUNDED : Confirmer le paiement en retard
+    PAID --> REFUNDED : Annuler ou refuser
+    PAID --> ACCEPTED : Accepter
+    ACCEPTED --> READY : Déclarer prête
+    READY --> ASSIGNED : Assigner
+    ASSIGNED --> READY : Se désister
+    ASSIGNED --> IN_DELIVERY : Récupérer la commande
+    IN_DELIVERY --> DELIVERED : Confirmer la livraison
+    IN_DELIVERY --> RETRY_PENDING : Premier échec
+    RETRY_PENDING --> IN_DELIVERY : Relancer la livraison
+    IN_DELIVERY --> RETURN_PENDING : Second échec
+    RETURN_PENDING --> RETURNED : Confirmer la remise au vendeur
+    REFUNDED --> [*]
+    DELIVERED --> [*]
+    RETURNED --> [*]
+```
