@@ -36,8 +36,9 @@ def test_return_after_two_failed_deliveries_preserves_payment(
     reference = "mobile-money-return"
     payments.confirm_payment(order.id, "system", reference)
     orders.apply_action(order.id, "seller-1", Action.ACCEPT)
-    orders.apply_action(order.id, "seller-1", Action.MARK_READY)
-    orders.apply_action(order.id, "system", Action.ASSIGN, courier_id="courier-1")
+    assigned = orders.apply_action(order.id, "seller-1", Action.MARK_READY)
+    assert assigned.status is Status.ASSIGNED
+    assert assigned.courier_id == "courier-1"
 
     steps = [
         (Action.PICK_UP, Status.IN_DELIVERY),

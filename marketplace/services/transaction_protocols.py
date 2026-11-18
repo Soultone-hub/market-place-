@@ -19,6 +19,10 @@ class OrderTransaction(OrderChanges, Protocol):
 
     def get_history(self, order_id: int) -> list[HistoryEntry]: ...
 
+    def find_eligible_courier_id(
+        self, order_id: int, *, courier_id: str | None = None
+    ) -> str | None: ...
+
 
 class PaymentTransaction(OrderChanges, Protocol):
     def payment_order_id(self, reference: str) -> int | None: ...

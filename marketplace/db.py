@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
-from .domain import Role
+from .domain import SYSTEM_ACTOR_ID, Role
 from .persistence.postgres_models import ActorRecord, Base
 
 DEMO_ACTORS = {
@@ -16,7 +16,7 @@ DEMO_ACTORS = {
     "seller-1": Role.SELLER,
     "courier-1": Role.COURIER,
     "courier-2": Role.COURIER,
-    "system": Role.SYSTEM,
+    SYSTEM_ACTOR_ID: Role.SYSTEM,
 }
 
 

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 MAX_ACTOR_ID = 100
+SYSTEM_ACTOR_ID = "system"
 
 
 class Role(StrEnum):

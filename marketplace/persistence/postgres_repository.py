@@ -8,7 +8,7 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 
-from ..domain import Actor, HistoryEntry, Order, OrderNotFound, Status
+from ..domain import Action, Actor, HistoryEntry, Order, OrderNotFound, Role, Status
 from .postgres_models import ActorRecord, HistoryRecord, OrderRecord, PaymentRecord
 
 
@@ -29,6 +29,28 @@ class PostgresTransaction:
     def find_actor(self, actor_id: str) -> Actor | None:
         record = self._session.get(ActorRecord, actor_id)
         return Actor(record.id, record.role) if record is not None else None
+
+    def find_eligible_courier_id(
+        self, order_id: int, *, courier_id: str | None = None
+    ) -> str | None:
+        # Include a withdrawal recorded earlier in the same transaction.
+        self._session.flush()
+        withdrew_from_order = (
+            select(HistoryRecord.id)
+            .where(
+                HistoryRecord.order_id == order_id,
+                HistoryRecord.action == Action.WITHDRAW,
+                HistoryRecord.actor_id == ActorRecord.id,
+            )
+            .exists()
+        )
+        eligible_couriers = select(ActorRecord.id).where(
+            ActorRecord.role == Role.COURIER,
+            ~withdrew_from_order,
+        )
+        if courier_id is not None:
+            eligible_couriers = eligible_couriers.where(ActorRecord.id == courier_id)
+        return self._session.scalar(eligible_couriers.order_by(ActorRecord.id).limit(1))
 
     def create_order(self, buyer_id: str, seller_id: str, amount_xof: int) -> Order:
         record = OrderRecord(

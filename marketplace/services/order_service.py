@@ -5,11 +5,13 @@ from datetime import UTC, datetime
 from ..domain import (
     MAX_AMOUNT,
     MAX_REASON,
+    SYSTEM_ACTOR_ID,
     Action,
     HistoryEntry,
     InvalidInput,
     Order,
     Role,
+    Status,
     require_role,
 )
 from .order_workflow import apply_order_transition, require_actor, require_participant
@@ -61,9 +63,34 @@ class OrderService:
         with self._transaction() as transaction:
             actor = require_actor(transaction, actor_id)
             order = transaction.get_order(order_id)
-            return apply_order_transition(
+            if action == Action.ASSIGN and courier_id is not None and order.status == Status.READY:
+                require_role(actor, action)
+                require_participant(transaction, courier_id, Role.COURIER)
+                if transaction.find_eligible_courier_id(order.id, courier_id=courier_id) is None:
+                    raise InvalidInput("The courier has already withdrawn from this order.")
+
+            updated = apply_order_transition(
                 transaction, order, actor, action, courier_id=courier_id, reason=reason
             )
+            if updated.status == Status.READY:
+                return self._assign_available_courier(transaction, updated)
+            return updated
+
+    @staticmethod
+    def _assign_available_courier(transaction: OrderTransaction, order: Order) -> Order:
+        courier_id = transaction.find_eligible_courier_id(order.id)
+        if courier_id is None:
+            return order
+
+        system = require_actor(transaction, SYSTEM_ACTOR_ID)
+        return apply_order_transition(
+            transaction,
+            order,
+            system,
+            Action.ASSIGN,
+            courier_id=courier_id,
+            reason="automatic_assignment",
+        )
 
     def get_order(self, order_id: int) -> tuple[Order, list[HistoryEntry]]:
         with self._transaction() as transaction:

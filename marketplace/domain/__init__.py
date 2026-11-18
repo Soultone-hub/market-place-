@@ -1,4 +1,4 @@
-from .actors import MAX_ACTOR_ID, Actor, Role
+from .actors import MAX_ACTOR_ID, SYSTEM_ACTOR_ID, Actor, Role
 from .errors import Conflict, Forbidden, InvalidInput, MarketplaceError, OrderNotFound
 from .order_state_machine import ACTION_ROLES, TRANSITIONS, require_role, transition
 from .orders import (
@@ -19,6 +19,7 @@ __all__ = [
     "MAX_AMOUNT",
     "MAX_REASON",
     "MAX_REFERENCE",
+    "SYSTEM_ACTOR_ID",
     "TRANSITIONS",
     "Action",
     "Actor",

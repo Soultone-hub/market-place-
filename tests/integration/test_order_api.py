@@ -28,35 +28,42 @@ async def check_delivery_via_api(orders, payments):
         assert paid.status_code == 200
 
         steps = [
-            ("seller-1", {"action": "accept"}, "ACCEPTED"),
-            ("seller-1", {"action": "mark_ready"}, "READY"),
-            ("system", {"action": "assign", "courier_id": "courier-1"}, "ASSIGNED"),
-            ("courier-1", {"action": "withdraw"}, "READY"),
-            ("system", {"action": "assign", "courier_id": "courier-2"}, "ASSIGNED"),
-            ("courier-2", {"action": "pick_up"}, "IN_DELIVERY"),
-            ("courier-2", {"action": "deliver"}, "DELIVERED"),
+            ("seller-1", "accept", "ACCEPTED", None),
+            ("seller-1", "mark_ready", "ASSIGNED", "courier-1"),
+            ("courier-1", "withdraw", "ASSIGNED", "courier-2"),
+            ("courier-2", "pick_up", "IN_DELIVERY", "courier-2"),
+            ("courier-2", "deliver", "DELIVERED", "courier-2"),
         ]
-        for actor, body, expected in steps:
+        for actor, action, status, courier in steps:
             result = await client.post(
-                f"/orders/{order_id}/actions", json=body, headers={"X-Actor-Id": actor}
+                f"/orders/{order_id}/actions",
+                json={"action": action},
+                headers={"X-Actor-Id": actor},
             )
             assert result.status_code == 200, result.text
-            assert result.json()["status"] == expected
+            assert result.json()["status"] == status
+            assert result.json()["courier_id"] == courier
 
         details = (await client.get(f"/orders/{order_id}")).json()
         assert details["order"]["courier_id"] == "courier-2"
         history = details["history"]
-        assert [entry["to_status"] for entry in history] == [
-            "PENDING_PAYMENT", "PAID", *(status for _, _, status in steps)
-        ]
-        assert [entry["actor_id"] for entry in history] == [
-            "buyer-1", "system", *(actor for actor, _, _ in steps)
+        assert [(entry["action"], entry["to_status"], entry["actor_id"]) for entry in history] == [
+            ("create", "PENDING_PAYMENT", "buyer-1"),
+            ("confirm_payment", "PAID", "system"),
+            ("accept", "ACCEPTED", "seller-1"),
+            ("mark_ready", "READY", "seller-1"),
+            ("assign", "ASSIGNED", "system"),
+            ("withdraw", "READY", "courier-1"),
+            ("assign", "ASSIGNED", "system"),
+            ("pick_up", "IN_DELIVERY", "courier-2"),
+            ("deliver", "DELIVERED", "courier-2"),
         ]
         assignments = [entry for entry in history if entry["action"] == "assign"]
         assert [entry["assigned_courier_id"] for entry in assignments] == [
             "courier-1", "courier-2"
         ]
         assert all(entry["actor_role"] == "SYSTEM" for entry in assignments)
+        assert all(entry["reason"] == "automatic_assignment" for entry in assignments)
 
 
 def test_assignment_without_courier_returns_validation_error(orders, payments):
