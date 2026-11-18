@@ -68,7 +68,3 @@ Sous Linux ou macOS, configure `TEST_DATABASE_URL` avec `export`. La commande `p
 - `marketplace/api.py` expose les opérations en HTTP. Les tests d’intégration appellent aussi le service directement.
 
 Le tableau des transitions et les hypothèses métier figurent dans [DESIGN.md](DESIGN.md).
-
-## Utilisation de l’IA
-
-Codex a aidé à structurer la note de conception et à rédiger l’implémentation, les tests pytest et la documentation de lancement. Le choix de la stack et les règles d’annulation, de remboursement et de réaffectation ont été discutés pendant la conception.
