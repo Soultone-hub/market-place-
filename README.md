@@ -1,4 +1,4 @@
-# Cotonou Marketplace
+# Marketplace
 
 Exercice technique sur le cycle d’une commande, de sa création au paiement puis à la livraison ou au retour chez le vendeur.
 
